@@ -1,0 +1,268 @@
+{
+  "name": "GitHub Engineering Health Digest to Slack (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "schedule",
+      "name": "Every Friday at 17:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -980,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "repo",
+              "name": "githubRepo",
+              "value": "octocat/Hello-World",
+              "type": "string"
+            },
+            {
+              "id": "language",
+              "name": "language",
+              "value": "EN",
+              "type": "string"
+            },
+            {
+              "id": "webhook",
+              "name": "destinationWebhookUrl",
+              "value": "https://hooks.slack.com/services/REPLACE/ME",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "configuration",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -760,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst match = String(input.githubRepo || '').trim().match(/^([^/\\s]+)\\/([^/\\s]+)$/);\nif (!match) throw new Error('githubRepo must use owner/repository.');\nif (!['EN','FR'].includes(String(input.language).toUpperCase())) throw new Error('language must be EN or FR.');\nif (!/^https:\\/\\//.test(String(input.destinationWebhookUrl || ''))) throw new Error('destinationWebhookUrl must be HTTPS.');\nconst until = new Date();\nconst since = new Date(until.getTime() - 7 * 24 * 60 * 60 * 1000);\nreturn [{ json: { ...input, owner: match[1], repo: match[2], language: String(input.language).toUpperCase(), since: since.toISOString(), until: until.toISOString() } }];"
+      },
+      "id": "validate",
+      "name": "Validate config and period",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -520,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $json.owner + '/' + $json.repo + '/commits?since=' + $json.since }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "github",
+      "name": "Fetch weekly commits from GitHub",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -280,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('Validate config and period').first().json;\nconst commits = $input.all().map(item => item.json).filter(commit => commit && commit.sha).map(commit => ({ sha: String(commit.sha).slice(0,7), message: commit.commit?.message?.split('\\n')[0] || 'No commit message', author: commit.author?.login || commit.commit?.author?.name || 'unknown', date: commit.commit?.author?.date || null, url: commit.html_url || null }));\nconst activity = { repository: config.githubRepo, period: { start: config.since, end: config.until }, commitCount: commits.length, commits };\nconst language = config.language === 'FR' ? 'Write entirely in French.' : 'Write entirely in English.';\nconst prompt = language + ' You are preparing a factual weekly engineering digest for Slack. Use only the supplied evidence. Include an executive summary, a short list of changes, contributor signals where supported by the evidence, and a clear quiet-area note when there is no activity. Never invent issues, pull requests, incidents, or metrics. Use compact Markdown. Evidence: ' + JSON.stringify(activity);\nreturn [{ json: { ...config, activity, prompt } }];"
+      },
+      "id": "evidence",
+      "name": "Build factual engineering evidence",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -40,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{ { model: 'claude-sonnet-4-20250514', max_tokens: 1000, temperature: 0.2, messages: [ { role: 'user', content: $json.prompt } ] } }}",
+        "options": {}
+      },
+      "id": "claude",
+      "name": "Generate factual narrative with Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        200,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\nconst context = $('Build factual engineering evidence').first().json;\nconst narrative = (result.content || []).filter(part => part.type === 'text').map(part => part.text).join('\\n').trim();\nif (!narrative) throw new Error('Claude returned no narrative text.');\nconst heading = '*Engineering health digest — ' + context.githubRepo + '*';\nreturn [{ json: { destinationWebhookUrl: context.destinationWebhookUrl, text: heading + '\\n_Week ending ' + new Date(context.until).toISOString().slice(0,10) + '_\\n' + narrative } }];"
+      },
+      "id": "slackformat",
+      "name": "Format Slack digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.destinationWebhookUrl }}",
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{ { text: $json.text } }}",
+        "options": {}
+      },
+      "id": "slack",
+      "name": "Deliver digest to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        180
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every Friday at 17:00": {
+      "main": [
+        [
+          {
+            "node": "Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration": {
+      "main": [
+        [
+          {
+            "node": "Validate config and period",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate config and period": {
+      "main": [
+        [
+          {
+            "node": "Fetch weekly commits from GitHub",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch weekly commits from GitHub": {
+      "main": [
+        [
+          {
+            "node": "Build factual engineering evidence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build factual engineering evidence": {
+      "main": [
+        [
+          {
+            "node": "Generate factual narrative with Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate factual narrative with Claude": {
+      "main": [
+        [
+          {
+            "node": "Format Slack digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Slack digest": {
+      "main": [
+        [
+          {
+            "node": "Deliver digest to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "d2277d59-f312-4b49-8da1-73df1a9ca8e0",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
