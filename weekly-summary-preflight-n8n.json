@@ -1,0 +1,50 @@
+{
+  "name": "GitHub Weekly Summary — Preflight",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "cd720ec3-4b89-49c8-81c5-3cff2f282be2",
+      "name": "When clicked: validate setup",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-460, 120]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "repo", "name": "githubRepo", "value": "octocat/Hello-World", "type": "string" },
+            { "id": "language", "name": "language", "value": "EN", "type": "string" },
+            { "id": "webhook", "name": "destinationWebhookUrl", "value": "https://hooks.slack.com/services/REPLACE/ME", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d9144f13-9d49-4908-8aa0-265cd8f5c12a",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-240, 120]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $input.first().json;\nconst errors = [];\nif (!/^([^/\\s]+)\\/([^/\\s]+)$/.test(String(config.githubRepo || '').trim())) errors.push('githubRepo must use owner/repository.');\nif (!['EN', 'FR'].includes(String(config.language || '').toUpperCase())) errors.push('language must be EN or FR.');\nif (!/^https:\\/\\//.test(String(config.destinationWebhookUrl || ''))) errors.push('destinationWebhookUrl must be an HTTPS URL.');\nconst valid = errors.length === 0;\nconst nextSteps = valid ? ['Create GITHUB_TOKEN with read access to the selected repository.', 'Set ANTHROPIC_API_KEY in n8n.', 'Import the complete workflow and run it manually once before activating the schedule.'] : ['Correct the fields in Configuration.', 'Run this preflight again.'];\nreturn [{ json: { valid, errors, configuration: { githubRepo: config.githubRepo, language: String(config.language || '').toUpperCase(), destinationWebhookUrl: config.destinationWebhookUrl }, nextSteps } }];"
+      },
+      "id": "4e734baf-5578-41aa-8ea2-7f8bd26d387f",
+      "name": "Validate and explain next steps",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 120]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicked: validate setup": { "main": [[{ "node": "Configuration", "type": "main", "index": 0 }]] },
+    "Configuration": { "main": [[{ "node": "Validate and explain next steps", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "9694461b-35e1-40ba-9f6f-5d4fd142d8a3",
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}
