@@ -28,6 +28,10 @@ The full [Weekly GitHub Narrative Summary for n8n](https://payhip.com/b/mG0zF) a
 - Claude Sonnet narrative generation based only on fetched activity.
 - Slack webhook delivery and an English/French switch.
 
+## Need a custom setup?
+
+For a customized implementation, setup notes, and one reasonable revision, see [Custom n8n GitHub Weekly Summary Setup (USD 249)](https://payhip.com/b/ets3M). This is a paid implementation service; it does not include hosting or paid API usage.
+
 ## License
 
 MIT for the starter files. The complete workflow is sold separately under its product license.
